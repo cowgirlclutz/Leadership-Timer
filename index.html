@@ -1,0 +1,266 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans)}
+.wrap{padding:1rem 0}
+.top-bar{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:1.25rem}
+.metric{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px 16px}
+.metric-label{font-size:11px;color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+.metric-val{font-size:22px;font-weight:500;color:var(--color-text-primary);font-variant-numeric:tabular-nums}
+.metric-val.danger{color:#A32D2D}
+.metric-val.warn{color:#854F0B}
+.progress-wrap{margin-bottom:1.25rem}
+.progress-track{height:6px;background:var(--color-background-secondary);border-radius:3px;overflow:hidden}
+.progress-bar{height:100%;background:#534AB7;border-radius:3px;transition:width .5s linear}
+.progress-bar.warn{background:#BA7517}
+.progress-bar.danger{background:#E24B4A}
+.progress-label{display:flex;justify-content:space-between;font-size:11px;color:var(--color-text-tertiary);margin-top:4px}
+.agenda{display:flex;flex-direction:column;gap:2px}
+.item{display:grid;grid-template-columns:36px 44px 1fr 60px;gap:8px;align-items:center;padding:8px 10px;border-radius:var(--border-radius-md);cursor:pointer;border:1.5px solid transparent;transition:background .15s}
+.item:hover{background:var(--color-background-secondary)}
+.item.active{background:var(--color-background-secondary);border-color:#534AB7}
+.item.done{opacity:.45}
+.item.overrun{border-color:#E24B4A;background:#FCEBEB}
+.item-idx{font-size:11px;color:var(--color-text-tertiary);text-align:center}
+.item-dur{font-size:12px;color:var(--color-text-secondary);text-align:right}
+.item-name{font-size:13px;color:var(--color-text-primary);font-weight:500}
+.item-sub{font-size:11px;color:var(--color-text-secondary);margin-top:1px}
+.item-countdown{font-size:13px;font-weight:500;text-align:right;font-variant-numeric:tabular-nums;color:var(--color-text-secondary)}
+.item-countdown.warn{color:#854F0B}
+.item-countdown.danger{color:#A32D2D}
+.section-head{font-size:10px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--color-text-tertiary);padding:10px 10px 4px}
+.controls{display:flex;gap:8px;margin-top:1rem;align-items:center}
+.btn{display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:transparent;color:var(--color-text-primary);font-size:13px;cursor:pointer;font-family:var(--font-sans)}
+.btn:hover{background:var(--color-background-secondary)}
+.btn.primary{background:#534AB7;color:#EEEDFE;border-color:#534AB7}
+.btn.primary:hover{background:#3C3489}
+.btn.danger-btn{border-color:#A32D2D;color:#A32D2D}
+.btn.danger-btn:hover{background:#FCEBEB}
+.cost-flash{font-size:11px;color:var(--color-text-tertiary);margin-left:auto}
+.overrun-banner{display:none;background:#FCEBEB;border:1px solid #F09595;border-radius:var(--border-radius-md);padding:10px 14px;margin-bottom:1rem;font-size:13px;color:#791F1F}
+.overrun-banner.show{display:block}
+.pip{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px;flex-shrink:0}
+.pip.purple{background:#534AB7}
+.pip.teal{background:#1D9E75}
+.pip.amber{background:#BA7517}
+.pip.gray{background:#888780}
+</style>
+
+<div class="wrap">
+<h2 class="sr-only">Leadership meeting agenda timer with cost tracker</h2>
+
+<div id="overrun-banner" class="overrun-banner">
+  <i class="ti ti-alert-triangle" style="font-size:16px;vertical-align:-2px;margin-right:6px" aria-hidden="true"></i>
+  <span id="overrun-msg">Meeting is over time</span>
+</div>
+
+<div class="top-bar">
+  <div class="metric">
+    <div class="metric-label">Elapsed</div>
+    <div class="metric-val" id="elapsed-display">0:00</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Current block</div>
+    <div class="metric-val" id="block-display">—</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Cost so far</div>
+    <div class="metric-val" id="cost-display">$0.00</div>
+  </div>
+</div>
+
+<div class="progress-wrap">
+  <div class="progress-track"><div class="progress-bar" id="progress-bar" style="width:0%"></div></div>
+  <div class="progress-label"><span>Start</span><span>90 min</span></div>
+</div>
+
+<div class="agenda" id="agenda-list"></div>
+
+<div class="controls">
+  <button class="btn primary" id="play-btn" onclick="togglePlay()">
+    <i class="ti ti-player-play" style="font-size:16px" aria-hidden="true"></i> Start
+  </button>
+  <button class="btn" onclick="prevItem()"><i class="ti ti-arrow-left" style="font-size:16px" aria-hidden="true"></i> Back</button>
+  <button class="btn" onclick="nextItem()">Next <i class="ti ti-arrow-right" style="font-size:16px" aria-hidden="true"></i></button>
+  <button class="btn danger-btn" onclick="resetAll()"><i class="ti ti-refresh" style="font-size:16px" aria-hidden="true"></i> Reset</button>
+  <span class="cost-flash" id="cost-rate">$13.75/min · 11 attendees</span>
+</div>
+</div>
+
+<script>
+const RATE_PER_SEC = (75 * 11) / 3600;
+const TOTAL_MINS = 90;
+
+const sections = [
+  {label:"Opening", color:"amber"},
+  {label:"Priority updates", color:"purple"},
+  {label:"Domain rapid round — 4 min update · 2 min discussion", color:"teal"},
+  {label:"Close", color:"gray"}
+];
+
+const items = [
+  {sec:0, name:"Icebreaker", sub:"Starts on time — Scott joins when ready", dur:5},
+  {sec:0, name:"Safety moment", sub:"", dur:2},
+  {sec:0, name:"Scott intro + framing", sub:"Goals, urgent context, Questions at close", dur:3},
+  {sec:1, name:"Communication updates", sub:"", dur:3},
+  {sec:1, name:"Financial updates", sub:"", dur:5},
+  {sec:1, name:"Operational updates", sub:"", dur:5},
+  {sec:1, name:"Cross-functional updates", sub:"Eric & Jason — ITSM contracts", dur:10},
+  {sec:2, name:"EUC — Tristan", sub:"4 min update · 2 min discussion", dur:6},
+  {sec:2, name:"H&C — Anthony", sub:"4 min update · 2 min discussion", dur:6},
+  {sec:2, name:"SM&P — Raj", sub:"4 min update · 2 min discussion", dur:6},
+  {sec:2, name:"Field Services — Kelly", sub:"4 min update · 2 min discussion", dur:6},
+  {sec:2, name:"Philip — EA", sub:"4 min update · 2 min discussion", dur:6},
+  {sec:2, name:"Michael — EMEA & I&O MADJV", sub:"4 min update · 2 min discussion", dur:6},
+  {sec:2, name:"David — APAC", sub:"4 min update · 2 min discussion", dur:6},
+  {sec:3, name:"End discussion / Q&A", sub:"Open floor — escalations, cross-domain decisions", dur:10},
+  {sec:3, name:"Buffer", sub:"Absorbs overruns — hard stop", dur:10},
+];
+
+let elapsed = 0;
+let current = 0;
+let blockElapsed = 0;
+let playing = false;
+let timer = null;
+let lastSec = -1;
+
+function fmtTime(s){
+  const m=Math.floor(s/60), sec=s%60;
+  return m+':'+(sec<10?'0':'')+sec;
+}
+
+function itemStart(i){
+  return items.slice(0,i).reduce((a,x)=>a+x.dur*60,0);
+}
+
+function totalSecs(){return TOTAL_MINS*60}
+
+function render(){
+  const list = document.getElementById('agenda-list');
+  let html='', lastSec=-1;
+  items.forEach((item,i)=>{
+    if(item.sec!==lastSec){
+      const s=sections[item.sec];
+      html+=`<div class="section-head"><span class="pip ${s.color}"></span>${s.label}</div>`;
+      lastSec=item.sec;
+    }
+    const start=itemStart(i);
+    const end=start+item.dur*60;
+    const isDone=elapsed>=end;
+    const isActive=elapsed>=start&&elapsed<end;
+    const isOverrun=isActive&&blockElapsed>item.dur*60;
+    let remaining='';
+    let cclass='item-countdown';
+    if(isActive){
+      const rem=item.dur*60-blockElapsed;
+      if(rem<0){
+        remaining='-'+fmtTime(Math.abs(rem));
+        cclass+=' danger';
+      } else if(rem<=60){
+        remaining=fmtTime(rem);
+        cclass+=' warn';
+      } else {
+        remaining=fmtTime(rem);
+      }
+    } else if(!isDone){
+      remaining=item.dur+'m';
+    } else {
+      remaining='done';
+    }
+    const cls='item'+(isDone?' done':'')+(isActive?' active':'')+(isOverrun?' overrun':'');
+    html+=`<div class="${cls}" onclick="jumpTo(${i})">
+      <div class="item-idx">${i+1}</div>
+      <div class="item-dur">${item.dur}m</div>
+      <div><div class="item-name">${item.name}</div>${item.sub?`<div class="item-sub">${item.sub}</div>`:''}</div>
+      <div class="${cclass}">${remaining}</div>
+    </div>`;
+  });
+  list.innerHTML=html;
+
+  const cost=(elapsed*RATE_PER_SEC);
+  const costEl=document.getElementById('cost-display');
+  costEl.textContent='$'+cost.toFixed(2);
+  const pct=Math.min(elapsed/totalSecs()*100,100);
+  const bar=document.getElementById('progress-bar');
+  bar.style.width=pct+'%';
+  if(elapsed>totalSecs()){bar.classList.add('danger');bar.classList.remove('warn');costEl.classList.add('danger');}
+  else if(pct>80){bar.classList.add('warn');bar.classList.remove('danger');}
+  else{bar.classList.remove('warn','danger');}
+
+  document.getElementById('elapsed-display').textContent=fmtTime(elapsed);
+  const cur=items[current];
+  document.getElementById('block-display').textContent=cur?cur.name:'Done';
+
+  const over=elapsed>totalSecs();
+  const banner=document.getElementById('overrun-banner');
+  if(over){
+    banner.classList.add('show');
+    const overSec=elapsed-totalSecs();
+    const overCost=(overSec*RATE_PER_SEC).toFixed(2);
+    document.getElementById('overrun-msg').textContent=
+      'Over time by '+fmtTime(overSec)+' — $'+overCost+' over budget';
+  } else {
+    banner.classList.remove('show');
+  }
+}
+
+function tick(){
+  elapsed++;
+  const start=itemStart(current);
+  blockElapsed=elapsed-start;
+  if(elapsed>=itemStart(current+1||items.length) && current<items.length-1){
+    current++;
+    blockElapsed=0;
+  }
+  render();
+}
+
+function togglePlay(){
+  playing=!playing;
+  const btn=document.getElementById('play-btn');
+  if(playing){
+    timer=setInterval(tick,1000);
+    btn.innerHTML='<i class="ti ti-player-pause" style="font-size:16px" aria-hidden="true"></i> Pause';
+    btn.classList.add('primary');
+  } else {
+    clearInterval(timer);
+    btn.innerHTML='<i class="ti ti-player-play" style="font-size:16px" aria-hidden="true"></i> Resume';
+  }
+}
+
+function jumpTo(i){
+  current=i;
+  elapsed=itemStart(i);
+  blockElapsed=0;
+  render();
+}
+
+function nextItem(){
+  if(current<items.length-1){
+    current++;
+    elapsed=itemStart(current);
+    blockElapsed=0;
+    render();
+  }
+}
+
+function prevItem(){
+  if(current>0){
+    current--;
+    elapsed=itemStart(current);
+    blockElapsed=0;
+    render();
+  }
+}
+
+function resetAll(){
+  clearInterval(timer);
+  playing=false;
+  elapsed=0;current=0;blockElapsed=0;
+  const btn=document.getElementById('play-btn');
+  btn.innerHTML='<i class="ti ti-player-play" style="font-size:16px" aria-hidden="true"></i> Start';
+  render();
+}
+
+render();
+</script>
